@@ -1,0 +1,34 @@
+.venv/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Local/generated datasets
+data/raw/
+data/processed/
+data/ai/
+
+# Power BI files that embed generated data
+dashboard/*.xlsx
+dashboard/*.pbix
+dashboard/reference/
+
+# Local automation/debug artifacts
+outputs/
+assets/linkedin/contact_sheet.png
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Logs / OS / editor
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

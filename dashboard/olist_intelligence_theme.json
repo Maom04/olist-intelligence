@@ -1,0 +1,29 @@
+{
+  "name": "Olist Intelligence",
+  "dataColors": ["#7C3AED", "#22D3EE", "#10B981", "#F59E0B", "#EF4444", "#A78BFA", "#38BDF8", "#34D399"],
+  "background": "#0B1020",
+  "foreground": "#E5E7EB",
+  "tableAccent": "#7C3AED",
+  "textClasses": {
+    "callout": {"fontFace": "Segoe UI Semibold", "color": "#F8FAFC"},
+    "title": {"fontFace": "Segoe UI Semibold", "color": "#F8FAFC"},
+    "header": {"fontFace": "Segoe UI Semibold", "color": "#CBD5E1"},
+    "label": {"fontFace": "Segoe UI", "color": "#94A3B8"}
+  },
+  "visualStyles": {
+    "*": {
+      "*": {
+        "background": [{"color": {"solid": {"color": "#111827"}}, "transparency": 0}],
+        "border": [{"show": false}],
+        "title": [{"show": true, "fontFamily": "Segoe UI Semibold", "fontSize": 12, "color": {"solid": {"color": "#E5E7EB"}}}],
+        "visualHeader": [{"show": false}]
+      }
+    },
+    "card": {
+      "*": {
+        "labels": [{"fontSize": 28, "fontFamily": "Segoe UI Semibold", "color": {"solid": {"color": "#F8FAFC"}}}],
+        "categoryLabels": [{"fontSize": 10, "color": {"solid": {"color": "#94A3B8"}}}]
+      }
+    }
+  }
+}

@@ -1,0 +1,94 @@
+-- OLIST INTELLIGENCE | Measures
+
+Total Pedidos =
+DISTINCTCOUNT(orders_analytics[order_id])
+
+Pedidos Entregues =
+CALCULATE(
+    [Total Pedidos],
+    orders_analytics[order_status] = "delivered"
+)
+
+Clientes Unicos =
+DISTINCTCOUNT(orders_analytics[customer_unique_id])
+
+GMV =
+CALCULATE(
+    SUM(orders_analytics[products_value]),
+    orders_analytics[order_status] = "delivered"
+)
+
+Valor Frete =
+CALCULATE(
+    SUM(orders_analytics[freight_value]),
+    orders_analytics[order_status] = "delivered"
+)
+
+Ticket Medio =
+DIVIDE(
+    [GMV],
+    [Pedidos Entregues]
+)
+
+Avaliacao Media =
+AVERAGE(orders_analytics[latest_review_score])
+
+Pedidos Atrasados =
+CALCULATE(
+    [Total Pedidos],
+    orders_analytics[is_delayed] = TRUE()
+)
+
+Pedidos Com Status de Entrega =
+CALCULATE(
+    [Total Pedidos],
+    NOT ISBLANK(orders_analytics[is_delayed])
+)
+
+Taxa Atraso =
+DIVIDE(
+    [Pedidos Atrasados],
+    [Pedidos Com Status de Entrega]
+)
+
+Clientes Recorrentes =
+CALCULATE(
+    DISTINCTCOUNT(orders_analytics[customer_unique_id]),
+    orders_analytics[is_repeat_customer] = TRUE()
+)
+
+Taxa Clientes Recorrentes =
+DIVIDE(
+    [Clientes Recorrentes],
+    [Clientes Unicos]
+)
+
+GMV por Item =
+CALCULATE(
+    SUM(items_analytics[price]),
+    items_analytics[order_status] = "delivered"
+)
+
+Itens Vendidos =
+CALCULATE(
+    COUNTROWS(items_analytics),
+    items_analytics[order_status] = "delivered"
+)
+
+Frete Medio por Item =
+CALCULATE(
+    AVERAGE(items_analytics[freight_value]),
+    items_analytics[order_status] = "delivered"
+)
+
+Avaliacao Media Atrasados =
+CALCULATE(
+    AVERAGE(orders_analytics[latest_review_score]),
+    orders_analytics[is_delayed] = TRUE()
+)
+
+Avaliacao Media No Prazo =
+CALCULATE(
+    AVERAGE(orders_analytics[latest_review_score]),
+    orders_analytics[is_delayed] = FALSE()
+)
