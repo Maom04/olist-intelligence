@@ -3,13 +3,12 @@ from pathlib import Path
 import pandas as pd
 
 
-RAW_DATA_PATH = Path("data/raw")
+RAW_DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "raw"
 
 
 def audit_csv(file_path: Path) -> None:
     df = pd.read_csv(file_path)
 
-    print("=" * 80)
     print(f"ARQUIVO: {file_path.name}")
     print(f"Linhas: {df.shape[0]:,}")
     print(f"Colunas: {df.shape[1]}")

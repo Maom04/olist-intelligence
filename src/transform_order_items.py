@@ -3,29 +3,21 @@ from pathlib import Path
 import pandas as pd
 
 
-RAW_PATH = Path("data/raw")
+RAW_PATH = Path(__file__).resolve().parent.parent / "data" / "raw"
 
 
 def load_order_items() -> pd.DataFrame:
-    return pd.read_csv(
-        RAW_PATH / "olist_order_items_dataset.csv"
-    )
+    return pd.read_csv(RAW_PATH / "olist_order_items_dataset.csv")
 
 
 def transform_order_items(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
-    # Converte a data limite de envio
     df["shipping_limit_date"] = pd.to_datetime(
-        df["shipping_limit_date"],
-        errors="coerce"
+        df["shipping_limit_date"], errors="coerce"
     )
 
-    # Valor total de cada item
-    df["item_total_value"] = (
-        df["price"]
-        + df["freight_value"]
-    )
+    df["item_total_value"] = df["price"] + df["freight_value"]
 
     return df
 

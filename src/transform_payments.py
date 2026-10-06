@@ -3,43 +3,26 @@ from pathlib import Path
 import pandas as pd
 
 
-RAW_PATH = Path("data/raw")
+RAW_PATH = Path(__file__).resolve().parent.parent / "data" / "raw"
 
 
 def load_payments() -> pd.DataFrame:
-    return pd.read_csv(
-        RAW_PATH / "olist_order_payments_dataset.csv"
-    )
+    return pd.read_csv(RAW_PATH / "olist_order_payments_dataset.csv")
 
 
 def transform_payments(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
-    # Padronização textual
-    df["payment_type"] = (
-        df["payment_type"]
-        .str.strip()
-        .str.lower()
+    df["payment_type"] = df["payment_type"].str.strip().str.lower()
+
+    df["is_zero_value_payment"] = df["payment_value"] == 0
+
+    # Zero parcelas é inválido apenas para cartão de crédito.
+    df["has_invalid_installments"] = (df["payment_type"] == "credit_card") & (
+        df["payment_installments"] == 0
     )
 
-    # Flag de pagamento com valor zero
-    df["is_zero_value_payment"] = (
-        df["payment_value"] == 0
-    )
-
-    # Parcelamento igual a zero não faz sentido
-    # para cartão de crédito.
-    df["has_invalid_installments"] = (
-        (df["payment_type"] == "credit_card")
-        & (df["payment_installments"] == 0)
-    )
-
-    # Criamos uma versão analítica sem alterar
-    # a coluna original.
-    df["installments_clean"] = (
-        df["payment_installments"]
-        .astype("Int64")
-    )
+    df["installments_clean"] = df["payment_installments"].astype("Int64")
 
     df.loc[
         df["has_invalid_installments"],
@@ -100,19 +83,13 @@ def aggregate_payments(df: pd.DataFrame) -> pd.DataFrame:
         .drop_duplicates(
             subset="order_id",
             keep="first",
-        )
-        [
+        )[
             [
                 "order_id",
                 "payment_type",
             ]
         ]
-        .rename(
-            columns={
-                "payment_type":
-                "primary_payment_type"
-            }
-        )
+        .rename(columns={"payment_type": "primary_payment_type"})
     )
 
     payments_agg = payments_agg.merge(
@@ -122,13 +99,8 @@ def aggregate_payments(df: pd.DataFrame) -> pd.DataFrame:
         validate="one_to_one",
     )
 
-    # Identifica utilização de voucher
     voucher_usage = (
-        df.assign(
-            has_voucher=(
-                df["payment_type"] == "voucher"
-            )
-        )
+        df.assign(has_voucher=(df["payment_type"] == "voucher"))
         .groupby("order_id")["has_voucher"]
         .any()
         .reset_index()
@@ -148,24 +120,14 @@ def main() -> None:
 
     payments = load_payments()
 
-    payments = transform_payments(
-        payments
-    )
+    payments = transform_payments(payments)
 
-    payments_agg = aggregate_payments(
-        payments
-    )
+    payments_agg = aggregate_payments(payments)
 
     print("RESULTADO:")
-    print(
-        f"Registros originais: "
-        f"{len(payments):,}"
-    )
+    print(f"Registros originais: {len(payments):,}")
 
-    print(
-        f"Pedidos agregados: "
-        f"{len(payments_agg):,}"
-    )
+    print(f"Pedidos agregados: {len(payments_agg):,}")
 
     print("\nTIPOS:")
     print(payments_agg.dtypes)
@@ -173,38 +135,17 @@ def main() -> None:
     print("\nEXEMPLO:")
     print(payments_agg.head())
 
-    print(
-        "\nPEDIDOS COM VALOR ZERO "
-        "EM ALGUM PAGAMENTO:"
-    )
+    print("\nPEDIDOS COM VALOR ZERO EM ALGUM PAGAMENTO:")
 
-    print(
-        payments_agg[
-            "has_zero_value_payment"
-        ].sum()
-    )
+    print(payments_agg["has_zero_value_payment"].sum())
 
-    print(
-        "\nPEDIDOS COM PROBLEMA "
-        "DE PARCELAMENTO:"
-    )
+    print("\nPEDIDOS COM PROBLEMA DE PARCELAMENTO:")
 
-    print(
-        payments_agg[
-            "has_invalid_installments"
-        ].sum()
-    )
+    print(payments_agg["has_invalid_installments"].sum())
 
-    print(
-        "\nFORMAS PRINCIPAIS "
-        "DE PAGAMENTO:"
-    )
+    print("\nFORMAS PRINCIPAIS DE PAGAMENTO:")
 
-    print(
-        payments_agg[
-            "primary_payment_type"
-        ].value_counts()
-    )
+    print(payments_agg["primary_payment_type"].value_counts())
 
 
 if __name__ == "__main__":

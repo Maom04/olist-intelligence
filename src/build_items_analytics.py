@@ -10,6 +10,7 @@ from transform_order_items import (
 from transform_orders import (
     load_orders,
     transform_orders,
+    add_purchase_fields,
 )
 
 from transform_reviews import (
@@ -19,41 +20,28 @@ from transform_reviews import (
 )
 
 
-RAW_PATH = Path("data/raw")
-PROCESSED_PATH = Path("data/processed")
+ROOT = Path(__file__).resolve().parent.parent
+RAW_PATH = ROOT / "data" / "raw"
+PROCESSED_PATH = ROOT / "data" / "processed"
 
 
 def load_products() -> pd.DataFrame:
-    return pd.read_csv(
-        RAW_PATH / "olist_products_dataset.csv"
-    )
+    return pd.read_csv(RAW_PATH / "olist_products_dataset.csv")
 
 
 def load_translation() -> pd.DataFrame:
-    return pd.read_csv(
-        RAW_PATH / "product_category_name_translation.csv"
-    )
+    return pd.read_csv(RAW_PATH / "product_category_name_translation.csv")
 
 
 def load_sellers() -> pd.DataFrame:
-    return pd.read_csv(
-        RAW_PATH / "olist_sellers_dataset.csv"
-    )
+    return pd.read_csv(RAW_PATH / "olist_sellers_dataset.csv")
 
 
 def load_customers() -> pd.DataFrame:
-    return pd.read_csv(
-        RAW_PATH / "olist_customers_dataset.csv"
-    )
+    return pd.read_csv(RAW_PATH / "olist_customers_dataset.csv")
 
 
 def prepare_products() -> pd.DataFrame:
-    """
-    Prepara informações de produto e categorias.
-
-    Não altera os dados brutos.
-    """
-
     products = load_products()
     translation = load_translation()
 
@@ -68,8 +56,7 @@ def prepare_products() -> pd.DataFrame:
     # aparecem na tabela oficial de tradução.
     manual_translation = {
         "pc_gamer": "pc_gamer",
-        "portateis_cozinha_e_preparadores_de_alimentos":
-            "portable_kitchen_and_food_preparation",
+        "portateis_cozinha_e_preparadores_de_alimentos": "portable_kitchen_and_food_preparation",
     }
 
     missing_translation_mask = (
@@ -80,21 +67,15 @@ def prepare_products() -> pd.DataFrame:
     products.loc[
         missing_translation_mask,
         "product_category_name_english",
-    ] = (
-        products.loc[
-            missing_translation_mask,
-            "product_category_name",
-        ]
-        .map(manual_translation)
-    )
+    ] = products.loc[
+        missing_translation_mask,
+        "product_category_name",
+    ].map(manual_translation)
 
-    # Produtos realmente sem categoria
-    products["product_category_name_english"] = (
-        products["product_category_name_english"]
-        .fillna("unknown")
-    )
+    products["product_category_name_english"] = products[
+        "product_category_name_english"
+    ].fillna("unknown")
 
-    # Volume aproximado do produto
     products["product_volume_cm3"] = (
         products["product_length_cm"]
         * products["product_height_cm"]
@@ -105,58 +86,25 @@ def prepare_products() -> pd.DataFrame:
 
 
 def build_items_analytics() -> pd.DataFrame:
-    """
-    Constrói tabela analítica de itens.
-
-    Granularidade:
-        1 linha = 1 item de pedido
-    """
-
-    # ============================================================
-    # ORDER ITEMS
-    # ============================================================
+    """Uma linha por item de pedido."""
 
     items = load_order_items()
     items = transform_order_items(items)
 
     original_item_count = len(items)
 
-    # ============================================================
-    # PRODUCTS
-    # ============================================================
-
     products = prepare_products()
 
-    # ============================================================
-    # SELLERS
-    # ============================================================
-
     sellers = load_sellers()
-
-    # ============================================================
-    # ORDERS
-    # ============================================================
 
     orders = load_orders()
     orders = transform_orders(orders)
 
-    # ============================================================
-    # CUSTOMERS
-    # ============================================================
-
     customers = load_customers()
-
-    # ============================================================
-    # REVIEWS
-    # ============================================================
 
     reviews = load_reviews()
     reviews = transform_reviews(reviews)
     reviews_agg = aggregate_reviews(reviews)
-
-    # ============================================================
-    # ITEMS + PRODUCTS
-    # ============================================================
 
     df = items.merge(
         products,
@@ -165,20 +113,12 @@ def build_items_analytics() -> pd.DataFrame:
         validate="many_to_one",
     )
 
-    # ============================================================
-    # + SELLERS
-    # ============================================================
-
     df = df.merge(
         sellers,
         on="seller_id",
         how="left",
         validate="many_to_one",
     )
-
-    # ============================================================
-    # + ORDER CONTEXT
-    # ============================================================
 
     order_context = orders[
         [
@@ -202,10 +142,6 @@ def build_items_analytics() -> pd.DataFrame:
         validate="many_to_one",
     )
 
-    # ============================================================
-    # + CUSTOMER CONTEXT
-    # ============================================================
-
     customer_context = customers[
         [
             "customer_id",
@@ -221,10 +157,6 @@ def build_items_analytics() -> pd.DataFrame:
         how="left",
         validate="many_to_one",
     )
-
-    # ============================================================
-    # + REVIEW CONTEXT
-    # ============================================================
 
     review_context = reviews_agg[
         [
@@ -242,10 +174,6 @@ def build_items_analytics() -> pd.DataFrame:
         validate="many_to_one",
     )
 
-    # ============================================================
-    # VALIDAÇÃO DA GRANULARIDADE
-    # ============================================================
-
     if len(df) != original_item_count:
         raise ValueError(
             "Erro de granularidade: "
@@ -253,82 +181,30 @@ def build_items_analytics() -> pd.DataFrame:
             f"e o resultado possui {len(df):,}."
         )
 
-    duplicated_item_keys = (
-        df.duplicated(
-            subset=[
-                "order_id",
-                "order_item_id",
-            ]
-        )
-        .sum()
-    )
+    duplicated_item_keys = df.duplicated(
+        subset=[
+            "order_id",
+            "order_item_id",
+        ]
+    ).sum()
 
     if duplicated_item_keys > 0:
         raise ValueError(
-            f"Foram encontradas "
-            f"{duplicated_item_keys:,} "
-            "chaves duplicadas de item."
+            f"Foram encontradas {duplicated_item_keys:,} chaves duplicadas de item."
         )
 
-    # ============================================================
-    # CAMPOS TEMPORAIS
-    # ============================================================
+    add_purchase_fields(df)
 
-    df["purchase_date"] = (
-        df["order_purchase_timestamp"]
-        .dt.normalize()
-    )
+    df["freight_share"] = df["freight_value"] / df["item_total_value"]
 
-    df["purchase_year"] = (
-        df["order_purchase_timestamp"]
-        .dt.year
-    )
-
-    df["purchase_month"] = (
-        df["order_purchase_timestamp"]
-        .dt.month
-    )
-
-    df["purchase_year_month"] = (
-        df["order_purchase_timestamp"]
-        .dt.to_period("M")
-        .astype(str)
-    )
-
-    # ============================================================
-    # MÉTRICAS COMERCIAIS
-    # ============================================================
-
-    # Valor total do item:
-    # preço + frete
-    df["item_total_value"] = (
-        df["price"]
-        + df["freight_value"]
-    )
-
-    # Percentual do valor total associado ao frete
-    df["freight_share"] = (
-        df["freight_value"]
-        / df["item_total_value"]
-    )
-
-    # ============================================================
-    # LOGÍSTICA
-    # ============================================================
-
-    # Booleano anulável.
-    # Evita classificar como False quando
-    # algum estado estiver ausente.
+    # Sem um dos estados, não há como classificar a entrega interestadual.
     df["is_interstate"] = pd.Series(
         pd.NA,
         index=df.index,
         dtype="boolean",
     )
 
-    location_mask = (
-        df["customer_state"].notna()
-        & df["seller_state"].notna()
-    )
+    location_mask = df["customer_state"].notna() & df["seller_state"].notna()
 
     df.loc[
         location_mask,
@@ -338,16 +214,11 @@ def build_items_analytics() -> pd.DataFrame:
             location_mask,
             "customer_state",
         ]
-        !=
-        df.loc[
+        != df.loc[
             location_mask,
             "seller_state",
         ]
     )
-
-    # ============================================================
-    # AJUSTE DE TIPOS
-    # ============================================================
 
     integer_columns = [
         "order_item_id",
@@ -357,26 +228,15 @@ def build_items_analytics() -> pd.DataFrame:
     ]
 
     for column in integer_columns:
-        if column in df.columns:
-            df[column] = (
-                df[column]
-                .astype("Int64")
-            )
+        df[column] = df[column].astype("Int64")
 
-    # ============================================================
-    # ORDENAÇÃO FINAL
-    # ============================================================
-
-    df = (
-        df.sort_values(
-            by=[
-                "order_purchase_timestamp",
-                "order_id",
-                "order_item_id",
-            ]
-        )
-        .reset_index(drop=True)
-    )
+    df = df.sort_values(
+        by=[
+            "order_purchase_timestamp",
+            "order_id",
+            "order_item_id",
+        ]
+    ).reset_index(drop=True)
 
     return df
 
@@ -384,24 +244,14 @@ def build_items_analytics() -> pd.DataFrame:
 def save_items_analytics(
     df: pd.DataFrame,
 ) -> None:
-    """
-    Salva a tabela analítica em CSV e Parquet.
-    """
-
     PROCESSED_PATH.mkdir(
         parents=True,
         exist_ok=True,
     )
 
-    csv_path = (
-        PROCESSED_PATH
-        / "items_analytics.csv"
-    )
+    csv_path = PROCESSED_PATH / "items_analytics.csv"
 
-    parquet_path = (
-        PROCESSED_PATH
-        / "items_analytics.parquet"
-    )
+    parquet_path = PROCESSED_PATH / "items_analytics.parquet"
 
     df.to_csv(
         csv_path,
@@ -413,13 +263,9 @@ def save_items_analytics(
         index=False,
     )
 
-    print(
-        f"\nCSV salvo em: {csv_path}"
-    )
+    print(f"\nCSV salvo em: {csv_path}")
 
-    print(
-        f"Parquet salvo em: {parquet_path}"
-    )
+    print(f"Parquet salvo em: {parquet_path}")
 
 
 def main() -> None:
@@ -429,32 +275,15 @@ def main() -> None:
     print("ITEMS ANALYTICS")
     print("=" * 80)
 
-    print(
-        f"Linhas: {len(df):,}"
-    )
+    print(f"Linhas: {len(df):,}")
 
-    print(
-        f"Pedidos únicos: "
-        f"{df['order_id'].nunique():,}"
-    )
+    print(f"Pedidos únicos: {df['order_id'].nunique():,}")
 
-    print(
-        f"Produtos únicos: "
-        f"{df['product_id'].nunique():,}"
-    )
+    print(f"Produtos únicos: {df['product_id'].nunique():,}")
 
-    print(
-        f"Vendedores únicos: "
-        f"{df['seller_id'].nunique():,}"
-    )
+    print(f"Vendedores únicos: {df['seller_id'].nunique():,}")
 
-    print(
-        f"Colunas: {df.shape[1]}"
-    )
-
-    # ============================================================
-    # CATEGORIAS
-    # ============================================================
+    print(f"Colunas: {df.shape[1]}")
 
     print("\nTOP 10 CATEGORIAS POR GMV:")
 
@@ -464,60 +293,28 @@ def main() -> None:
             dropna=False,
         )["price"]
         .sum()
-        .sort_values(
-            ascending=False
-        )
+        .sort_values(ascending=False)
         .head(10)
     )
 
     print(category_gmv)
 
-    # ============================================================
-    # LOGÍSTICA
-    # ============================================================
-
     print("\nITENS INTERESTADUAIS:")
 
-    print(
-        df["is_interstate"]
-        .value_counts(
-            dropna=False
-        )
-    )
-
-    # ============================================================
-    # CATEGORIAS AUSENTES
-    # ============================================================
+    print(df["is_interstate"].value_counts(dropna=False))
 
     print("\nPRODUTOS CLASSIFICADOS COMO UNKNOWN:")
 
-    unknown_products = (
-        df.loc[
-            df["product_category_name_english"]
-            == "unknown",
-            "product_id",
-        ]
-        .nunique()
-    )
+    unknown_products = df.loc[
+        df["product_category_name_english"] == "unknown",
+        "product_id",
+    ].nunique()
 
-    print(
-        f"{unknown_products:,}"
-    )
-
-    # ============================================================
-    # FRETE
-    # ============================================================
+    print(f"{unknown_products:,}")
 
     print("\nPARTICIPAÇÃO DO FRETE:")
 
-    print(
-        df["freight_share"]
-        .describe()
-    )
-
-    # ============================================================
-    # EXEMPLO
-    # ============================================================
+    print(df["freight_share"].describe())
 
     print("\nEXEMPLO:")
 
@@ -536,15 +333,7 @@ def main() -> None:
         "is_interstate",
     ]
 
-    print(
-        df[
-            example_columns
-        ].head()
-    )
-
-    # ============================================================
-    # SALVAMENTO
-    # ============================================================
+    print(df[example_columns].head())
 
     save_items_analytics(df)
 

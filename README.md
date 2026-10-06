@@ -1,145 +1,25 @@
 # Olist Intelligence
 
-Projeto de portfólio de **Analytics + Machine Learning + Power BI** construído sobre o Brazilian E-Commerce Public Dataset by Olist.
+Análise do Brazilian E-Commerce Public Dataset by Olist com Pandas, scikit-learn e Power BI. O projeto produz duas tabelas analíticas, resultados de análise de reviews e imagens de referência dos dashboards.
 
-O objetivo foi transformar dados brutos de e-commerce em um pipeline reproduzível, uma camada analítica confiável, um dashboard executivo e uma análise de experiência do cliente com NLP.
+![Painel executivo](assets/executive_overview.png)
+![Análise de reviews](assets/customer_ai_intelligence.png)
 
-![Executive Overview](assets/executive_overview.png)
+## Dados e saídas
 
-![Customer & AI Intelligence](assets/customer_ai_intelligence.png)
+Baixe os nove CSVs do [dataset da Olist](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce) e coloque-os em `data/raw/` conforme [data/README.md](data/README.md).
 
-## Resultados principais
+O pipeline produz:
 
-- **99.441 pedidos** processados
-- **112.650 itens** processados
-- **96.096 clientes únicos**
-- **32.951 produtos**
-- **3.095 vendedores**
-- **R$ 13,22 milhões de GMV entregue**
-- **96.478 pedidos entregues**
-- **R$ 137,04 de ticket médio**
-- **4,16 de avaliação média**
-- **6,8% de taxa de atraso**
-- **303 divergências financeiras** entre 98.665 pedidos comparáveis
+- `data/processed/orders_analytics.csv` e `.parquet`: uma linha por pedido;
+- `data/processed/items_analytics.csv` e `.parquet`: uma linha por item;
+- `data/ai/review_ai_analytics.csv`, resumos e métricas do modelo de reviews.
 
-## Camada de IA / NLP
+As tabelas de pedidos e itens preservam os identificadores originais e são validadas quanto a chaves, granularidade e conciliação de produtos e frete. A diferença entre pagamentos e itens é sinalizada, sem alterar os valores da fonte.
 
-Foram analisados **40.604 comentários reais de clientes**.
+## Execução
 
-### Classificação de sentimento
-
-Modelo:
-
-```
-TF-IDF
-  ↓
-SGDClassifier (log-loss)
-  ↓
-Positivo / Neutro / Negativo
-```
-
-Desempenho no conjunto de teste, usando rótulos derivados das notas dos reviews (1–2 negativo, 3 neutro, 4–5 positivo):
-
-- **Acurácia: 83,7%**
-- **Macro F1: 0,67**
-- **8.121 comentários no holdout**
-
-> Como os rótulos de sentimento são derivados das avaliações numéricas, a métrica mede consistência com esse proxy e não substitui uma validação humana anotada.
-
-Distribuição prevista:
-
-- Positivo: **63,2%**
-- Negativo: **30,3%**
-- Neutro: **6,6%**
-
-### Topic Modeling
-
-Para avaliações negativas e neutras foi usado:
-
-```
-TF-IDF → NMF
-```
-
-Os principais grupos encontrados foram relacionados a:
-
-- atraso / entrega;
-- item faltante / pedido incompleto;
-- atendimento / vendedor.
-
-### Insight de negócio
-
-A avaliação média de pedidos entregues **no prazo** foi de aproximadamente **4,29**.
-
-Para pedidos **atrasados**, caiu para aproximadamente **2,27**.
-
-Isso representa uma diferença de cerca de **2,02 pontos**, indicando forte associação entre desempenho logístico e satisfação do cliente.
-
-## Arquitetura
-
-```
-9 CSVs brutos
-      ↓
-auditoria de dados
-      ↓
-transformações com Pandas
-      ↓
-agregações por granularidade
-      ↓
-┌──────────────────────┬──────────────────────┐
-│ orders_analytics     │ items_analytics      │
-│ 1 linha = 1 pedido   │ 1 linha = 1 item     │
-└──────────────────────┴──────────────────────┘
-      ↓
-validação de integridade
-      ↓
-CSV + Parquet
-      ↓
-Machine Learning / NLP
-      ↓
-Power BI
-```
-
-## Validações implementadas
-
-O pipeline verifica automaticamente:
-
-- unicidade de `order_id`;
-- unicidade da chave `order_id + order_item_id`;
-- integridade item → pedido;
-- conciliação do valor dos produtos;
-- conciliação do frete;
-- divergências entre pagamento e itens;
-- granularidade após merges;
-- chaves órfãs;
-- nulos e anomalias de pagamento.
-
-## Estrutura
-
-```
-olist-intelligence/
-├── assets/
-├── dashboard/
-├── data/
-│   ├── raw/
-│   ├── processed/
-│   └── ai/
-├── src/
-│   ├── data_audit.py
-│   ├── relational_audit.py
-│   ├── transform_orders.py
-│   ├── transform_order_items.py
-│   ├── transform_payments.py
-│   ├── transform_reviews.py
-│   ├── build_orders_analytics.py
-│   ├── build_items_analytics.py
-│   ├── ai_review_intelligence.py
-│   └── main.py
-└── requirements.txt
-```
-
-## Como executar
-
-Crie e ative um ambiente virtual e instale as dependências:
+Crie um ambiente virtual e instale as dependências:
 
 ```powershell
 python -m venv .venv
@@ -147,51 +27,56 @@ python -m venv .venv
 python -m pip install -r requirements.txt
 ```
 
-Execute todo o projeto com um único comando:
+Execute a camada analítica e a análise de reviews:
 
 ```powershell
 python src\full_pipeline.py
 ```
 
-Se preferir executar as etapas separadamente:
+Para executar as etapas separadamente:
 
 ```powershell
 python src\main.py
 python src\ai_review_intelligence.py
 ```
 
-## Power BI
+Os scripts resolvem os dados a partir da pasta do projeto, mesmo quando o arquivo Python é chamado de outro diretório.
 
-O repositório inclui o tema visual, as medidas DAX e as imagens finais do dashboard. O arquivo `.pbix` não é versionado porque incorpora dados derivados e aumenta bastante o tamanho do repositório.
+## Auditorias opcionais
 
-Arquivos úteis:
+As auditorias abaixo são ferramentas de diagnóstico e **não** são executadas por `full_pipeline.py`:
 
-```text
-dashboard/olist_intelligence_theme.json
-dashboard/measures.dax
-dashboard/POWERBI_BUILD_GUIDE.md
+```powershell
+python src\data_audit.py
+python src\relational_audit.py
+python src\audit_payments.py
+python src\audit_financial_consistency.py
 ```
 
-O modelo utiliza as tabelas `orders`, `items` e `review_ai`, relacionadas por `order_id`.
+Elas inspecionam CSVs brutos, relações entre tabelas e casos financeiros específicos. As validações necessárias para construir as tabelas analíticas continuam no pipeline principal.
 
-## Stack
+## Dashboards e Power BI
 
-- Python
-- Pandas
-- NumPy
-- Scikit-learn
-- TF-IDF
-- NMF
-- Parquet / PyArrow
-- Power BI
-- DAX
+O [guia de construção do Power BI](dashboard/POWERBI_BUILD_GUIDE.md) usa os CSVs processados e a análise de reviews. O tema e as medidas ficam em `dashboard/`. O arquivo `.pbix` e as planilhas Excel geradas localmente não são versionados.
 
-## Dataset
+Scripts auxiliares, executados quando necessário:
 
-Brazilian E-Commerce Public Dataset by Olist, disponibilizado publicamente no Kaggle:
+```powershell
+python src\export_powerbi_assets.py
+python src\build_dashboard_compact.py
+python src\build_dashboard_mockup.py
+python src\build_ai_dashboard.py
+python src\build_powerbi_source.py
+python src\build_ai_powerbi_source.py
+python src\build_linkedin_carousel.py
+```
 
-https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce
+`export_powerbi_assets.py` gera os CSVs de referência consumidos pelos dois dashboards executivos. Os scripts `build_*_powerbi_source.py` criam planilhas Excel opcionais. O carrossel usa as tabelas processadas, as métricas de IA e as imagens finais em `assets/`.
 
-Os CSVs brutos, datasets processados e artefatos analíticos gerados localmente são intencionalmente excluídos do Git. Veja `data/README.md` para reproduzir a estrutura.
+## Leitura das métricas
 
-> Este projeto é educacional e de portfólio. GMV representa o valor dos produtos vendidos nos pedidos entregues e não deve ser interpretado como receita contábil da Olist.
+Na base atual há 99.441 pedidos, 112.650 itens e 303 divergências financeiras entre pedidos comparáveis. Para pedidos entregues, o GMV dos produtos é R$ 13,22 milhões; ele não representa receita contábil da Olist.
+
+A análise de sentimento usa as notas dos próprios reviews como rótulos aproximados: 1–2 negativo, 3 neutro, 4–5 positivo. A acurácia de 83,7% e o macro F1 de 0,67 medem concordância com esse critério, não com uma anotação humana independente.
+
+A comparação entre satisfação e atraso considera somente pedidos com `order_status == "delivered"` e datas válidas. A nota média é cerca de 4,29 no prazo e 2,27 em atraso. É uma associação observada, não uma estimativa causal.

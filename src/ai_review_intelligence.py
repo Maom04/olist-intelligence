@@ -12,18 +12,91 @@ from sklearn.metrics import accuracy_score, f1_score, classification_report
 from sklearn.model_selection import train_test_split
 
 
-ROOT = Path(r"C:\Projetos\olist-intelligence")
+ROOT = Path(__file__).resolve().parent.parent
 RAW = ROOT / "data" / "raw"
 OUT = ROOT / "data" / "ai"
-OUT.mkdir(parents=True, exist_ok=True)
 
 STOPWORDS_PT = {
-    "a","ao","aos","aquela","aquele","aqueles","as","até","com","como","da","das","de","dela",
-    "dele","deles","depois","do","dos","e","ela","elas","ele","eles","em","entre","era","essa",
-    "esse","esta","este","eu","foi","foram","isso","isto","já","mais","mas","me","mesmo","meu",
-    "minha","muito","na","nas","não","no","nos","nossa","nosso","num","numa","o","os","ou","para",
-    "pela","pelas","pelo","pelos","por","porque","pra","que","se","sem","seu","sua","são","também",
-    "tem","tenho","tinha","um","uma","você","vocês","produto","pedido"
+    "a",
+    "ao",
+    "aos",
+    "aquela",
+    "aquele",
+    "aqueles",
+    "as",
+    "até",
+    "com",
+    "como",
+    "da",
+    "das",
+    "de",
+    "dela",
+    "dele",
+    "deles",
+    "depois",
+    "do",
+    "dos",
+    "e",
+    "ela",
+    "elas",
+    "ele",
+    "eles",
+    "em",
+    "entre",
+    "era",
+    "essa",
+    "esse",
+    "esta",
+    "este",
+    "eu",
+    "foi",
+    "foram",
+    "isso",
+    "isto",
+    "já",
+    "mais",
+    "mas",
+    "me",
+    "mesmo",
+    "meu",
+    "minha",
+    "muito",
+    "na",
+    "nas",
+    "não",
+    "no",
+    "nos",
+    "nossa",
+    "nosso",
+    "num",
+    "numa",
+    "o",
+    "os",
+    "ou",
+    "para",
+    "pela",
+    "pelas",
+    "pelo",
+    "pelos",
+    "por",
+    "porque",
+    "pra",
+    "que",
+    "se",
+    "sem",
+    "seu",
+    "sua",
+    "são",
+    "também",
+    "tem",
+    "tenho",
+    "tinha",
+    "um",
+    "uma",
+    "você",
+    "vocês",
+    "produto",
+    "pedido",
 }
 
 
@@ -48,12 +121,47 @@ def sentiment_from_score(score: int) -> str:
 def label_topic(top_terms: list[str]) -> str:
     joined = " ".join(top_terms)
     rules = [
-        ("Atraso / entrega", ["entrega","atraso","prazo","chegou","chegar","correio","transportadora","receber"]),
-        ("Produto com problema", ["defeito","quebrado","danificado","qualidade","funciona","estragado","diferente"]),
-        ("Item faltante / pedido incompleto", ["faltou","faltando","recebi","veio","apenas","parte","incompleto"]),
-        ("Atendimento / vendedor", ["atendimento","vendedor","loja","resposta","contato","cliente"]),
-        ("Embalagem / avaria", ["embalagem","caixa","embalado","amassado","avariado"]),
-        ("Cancelamento / reembolso", ["cancelado","cancelar","reembolso","estorno","devolucao","devolver"]),
+        (
+            "Atraso / entrega",
+            [
+                "entrega",
+                "atraso",
+                "prazo",
+                "chegou",
+                "chegar",
+                "correio",
+                "transportadora",
+                "receber",
+            ],
+        ),
+        (
+            "Produto com problema",
+            [
+                "defeito",
+                "quebrado",
+                "danificado",
+                "qualidade",
+                "funciona",
+                "estragado",
+                "diferente",
+            ],
+        ),
+        (
+            "Item faltante / pedido incompleto",
+            ["faltou", "faltando", "recebi", "veio", "apenas", "parte", "incompleto"],
+        ),
+        (
+            "Atendimento / vendedor",
+            ["atendimento", "vendedor", "loja", "resposta", "contato", "cliente"],
+        ),
+        (
+            "Embalagem / avaria",
+            ["embalagem", "caixa", "embalado", "amassado", "avariado"],
+        ),
+        (
+            "Cancelamento / reembolso",
+            ["cancelado", "cancelar", "reembolso", "estorno", "devolucao", "devolver"],
+        ),
     ]
     scores = []
     for label, kws in rules:
@@ -63,16 +171,17 @@ def label_topic(top_terms: list[str]) -> str:
 
 
 def main() -> None:
+    OUT.mkdir(parents=True, exist_ok=True)
     reviews = pd.read_csv(RAW / "olist_order_reviews_dataset.csv")
-    comments = reviews[
-        reviews["review_comment_message"].fillna("").str.strip().ne("")
-    ][
-        ["review_id","order_id","review_score","review_comment_message"]
+    comments = reviews[reviews["review_comment_message"].fillna("").str.strip().ne("")][
+        ["review_id", "order_id", "review_score", "review_comment_message"]
     ].copy()
 
     comments["comment_clean"] = comments["review_comment_message"].map(normalize_text)
     comments = comments[comments["comment_clean"].str.len() >= 3].copy()
-    comments["sentiment_label"] = comments["review_score"].astype(int).map(sentiment_from_score)
+    comments["sentiment_label"] = (
+        comments["review_score"].astype(int).map(sentiment_from_score)
+    )
 
     print(f"Comentários utilizados: {len(comments):,}")
     print("\nDistribuição original:")
@@ -152,11 +261,13 @@ def main() -> None:
         terms = feature_names[top_idx].tolist()
         label = label_topic(terms)
         topic_labels[topic_id] = label
-        topic_rows.append({
-            "topic_id": topic_id,
-            "topic_label": label,
-            "top_terms": ", ".join(terms),
-        })
+        topic_rows.append(
+            {
+                "topic_id": topic_id,
+                "topic_label": label,
+                "top_terms": ", ".join(terms),
+            }
+        )
 
     comments["ai_topic_id"] = pd.Series(pd.NA, index=comments.index, dtype="Int64")
     comments["ai_topic"] = "Experiência positiva"
@@ -167,9 +278,15 @@ def main() -> None:
 
     # Mantém uma linha por review; depois o Power BI pode relacionar por order_id.
     export_cols = [
-        "review_id","order_id","review_score","review_comment_message",
-        "sentiment_label","ai_sentiment","ai_sentiment_confidence",
-        "ai_topic_id","ai_topic",
+        "review_id",
+        "order_id",
+        "review_score",
+        "review_comment_message",
+        "sentiment_label",
+        "ai_sentiment",
+        "ai_sentiment_confidence",
+        "ai_topic_id",
+        "ai_topic",
     ]
     comments[export_cols].to_csv(
         OUT / "review_ai_analytics.csv",
@@ -180,21 +297,23 @@ def main() -> None:
     sentiment_summary = (
         comments.groupby("ai_sentiment", as_index=False)
         .agg(
-            reviews=("review_id","count"),
-            avg_score=("review_score","mean"),
-            avg_confidence=("ai_sentiment_confidence","mean"),
+            reviews=("review_id", "count"),
+            avg_score=("review_score", "mean"),
+            avg_confidence=("ai_sentiment_confidence", "mean"),
         )
         .sort_values("reviews", ascending=False)
     )
-    sentiment_summary["share"] = sentiment_summary["reviews"] / sentiment_summary["reviews"].sum()
+    sentiment_summary["share"] = (
+        sentiment_summary["reviews"] / sentiment_summary["reviews"].sum()
+    )
     sentiment_summary.to_csv(OUT / "sentiment_summary.csv", index=False)
 
     topic_summary = (
         comments.groupby("ai_topic", as_index=False)
         .agg(
-            reviews=("review_id","count"),
-            avg_score=("review_score","mean"),
-            avg_confidence=("ai_sentiment_confidence","mean"),
+            reviews=("review_id", "count"),
+            avg_score=("review_score", "mean"),
+            avg_confidence=("ai_sentiment_confidence", "mean"),
         )
         .sort_values("reviews", ascending=False)
     )

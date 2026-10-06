@@ -3,7 +3,7 @@ from pathlib import Path
 import pandas as pd
 
 
-RAW_PATH = Path("data/raw")
+RAW_PATH = Path(__file__).resolve().parent.parent / "data" / "raw"
 
 
 def load_csv(filename: str) -> pd.DataFrame:
@@ -21,9 +21,7 @@ def main() -> None:
     geolocation = load_csv("olist_geolocation_dataset.csv")
     translation = load_csv("product_category_name_translation.csv")
 
-    print("=" * 80)
     print("1. UNICIDADE DAS PRINCIPAIS CHAVES")
-    print("=" * 80)
 
     print(
         f"customers.customer_id: "
@@ -55,28 +53,16 @@ def main() -> None:
         f"/ {len(sellers):,} linhas"
     )
 
-    print("\n" + "=" * 80)
     print("2. CARDINALIDADE DAS TABELAS")
-    print("=" * 80)
+
+    print(f"Pedidos presentes em order_items: {items['order_id'].nunique():,}")
+
+    print(f"Pedidos presentes em payments: {payments['order_id'].nunique():,}")
+
+    print(f"Pedidos presentes em reviews: {reviews['order_id'].nunique():,}")
 
     print(
-        f"Pedidos presentes em order_items: "
-        f"{items['order_id'].nunique():,}"
-    )
-
-    print(
-        f"Pedidos presentes em payments: "
-        f"{payments['order_id'].nunique():,}"
-    )
-
-    print(
-        f"Pedidos presentes em reviews: "
-        f"{reviews['order_id'].nunique():,}"
-    )
-
-    print(
-        f"Pedidos com mais de 1 item: "
-        f"{(items.groupby('order_id').size() > 1).sum():,}"
+        f"Pedidos com mais de 1 item: {(items.groupby('order_id').size() > 1).sum():,}"
     )
 
     print(
@@ -89,44 +75,26 @@ def main() -> None:
         f"{(reviews.groupby('order_id').size() > 1).sum():,}"
     )
 
-    print("\n" + "=" * 80)
     print("3. CHAVES ÓRFÃS")
-    print("=" * 80)
 
-    customer_orphans = (
-        set(orders["customer_id"])
-        - set(customers["customer_id"])
-    )
+    customer_orphans = set(orders["customer_id"]) - set(customers["customer_id"])
 
-    item_order_orphans = (
-        set(items["order_id"])
-        - set(orders["order_id"])
-    )
+    item_order_orphans = set(items["order_id"]) - set(orders["order_id"])
 
-    product_orphans = (
-        set(items["product_id"])
-        - set(products["product_id"])
-    )
+    product_orphans = set(items["product_id"]) - set(products["product_id"])
 
-    seller_orphans = (
-        set(items["seller_id"])
-        - set(sellers["seller_id"])
-    )
+    seller_orphans = set(items["seller_id"]) - set(sellers["seller_id"])
 
     print(f"orders → customers: {len(customer_orphans):,}")
     print(f"items → orders: {len(item_order_orphans):,}")
     print(f"items → products: {len(product_orphans):,}")
     print(f"items → sellers: {len(seller_orphans):,}")
 
-    print("\n" + "=" * 80)
     print("4. STATUS DOS PEDIDOS")
-    print("=" * 80)
 
     print(orders["order_status"].value_counts())
 
-    print("\n" + "=" * 80)
     print("5. DATAS AUSENTES POR STATUS")
-    print("=" * 80)
 
     date_columns = [
         "order_approved_at",
@@ -143,56 +111,27 @@ def main() -> None:
             ].value_counts()
         )
 
-    print("\n" + "=" * 80)
     print("6. GEOLOCALIZAÇÃO")
-    print("=" * 80)
 
-    print(
-        f"Linhas: {len(geolocation):,}"
-    )
+    print(f"Linhas: {len(geolocation):,}")
 
-    print(
-        f"CEPs únicos: "
-        f"{geolocation['geolocation_zip_code_prefix'].nunique():,}"
-    )
+    print(f"CEPs únicos: {geolocation['geolocation_zip_code_prefix'].nunique():,}")
 
-    print(
-        f"Duplicatas exatas: "
-        f"{geolocation.duplicated().sum():,}"
-    )
+    print(f"Duplicatas exatas: {geolocation.duplicated().sum():,}")
 
-    print("\n" + "=" * 80)
     print("7. CATEGORIAS DE PRODUTOS")
-    print("=" * 80)
 
-    categories = set(
-        products["product_category_name"]
-        .dropna()
-        .unique()
-    )
+    categories = set(products["product_category_name"].dropna().unique())
 
-    translated_categories = set(
-        translation["product_category_name"]
-        .dropna()
-        .unique()
-    )
+    translated_categories = set(translation["product_category_name"].dropna().unique())
 
     missing_translation = categories - translated_categories
 
-    print(
-        f"Categorias nos produtos: "
-        f"{len(categories):,}"
-    )
+    print(f"Categorias nos produtos: {len(categories):,}")
 
-    print(
-        f"Categorias traduzidas: "
-        f"{len(translated_categories):,}"
-    )
+    print(f"Categorias traduzidas: {len(translated_categories):,}")
 
-    print(
-        f"Categorias sem tradução: "
-        f"{len(missing_translation):,}"
-    )
+    print(f"Categorias sem tradução: {len(missing_translation):,}")
 
     if missing_translation:
         print(sorted(missing_translation))

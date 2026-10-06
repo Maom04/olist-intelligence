@@ -5,6 +5,7 @@ import pandas as pd
 from transform_orders import (
     load_orders,
     transform_orders,
+    add_purchase_fields,
 )
 
 from transform_order_items import (
@@ -26,72 +27,39 @@ from transform_reviews import (
 )
 
 
-RAW_PATH = Path("data/raw")
-PROCESSED_PATH = Path("data/processed")
+ROOT = Path(__file__).resolve().parent.parent
+RAW_PATH = ROOT / "data" / "raw"
+PROCESSED_PATH = ROOT / "data" / "processed"
 
 
 def load_customers() -> pd.DataFrame:
-    """
-    Carrega a tabela original de clientes.
-    """
-    return pd.read_csv(
-        RAW_PATH / "olist_customers_dataset.csv"
-    )
+    return pd.read_csv(RAW_PATH / "olist_customers_dataset.csv")
 
 
 def build_orders_analytics() -> pd.DataFrame:
-    """
-    Constrói a tabela analítica principal.
-
-    Granularidade:
-        1 linha = 1 pedido
-    """
-
-    # ============================================================
-    # ORDERS
-    # ============================================================
+    """Uma linha por pedido."""
 
     orders = load_orders()
     orders = transform_orders(orders)
 
     original_order_count = len(orders)
 
-    # ============================================================
-    # CUSTOMERS
-    # ============================================================
-
     customers = load_customers()
-
-    # ============================================================
-    # ORDER ITEMS
-    # ============================================================
 
     items = load_order_items()
     items = transform_order_items(items)
 
     items_agg = aggregate_order_items(items)
 
-    # ============================================================
-    # PAYMENTS
-    # ============================================================
-
     payments = load_payments()
     payments = transform_payments(payments)
 
     payments_agg = aggregate_payments(payments)
 
-    # ============================================================
-    # REVIEWS
-    # ============================================================
-
     reviews = load_reviews()
     reviews = transform_reviews(reviews)
 
     reviews_agg = aggregate_reviews(reviews)
-
-    # ============================================================
-    # ORDERS + CUSTOMERS
-    # ============================================================
 
     df = orders.merge(
         customers,
@@ -100,20 +68,12 @@ def build_orders_analytics() -> pd.DataFrame:
         validate="many_to_one",
     )
 
-    # ============================================================
-    # + ORDER ITEMS
-    # ============================================================
-
     df = df.merge(
         items_agg,
         on="order_id",
         how="left",
         validate="one_to_one",
     )
-
-    # ============================================================
-    # + PAYMENTS
-    # ============================================================
 
     df = df.merge(
         payments_agg,
@@ -122,20 +82,12 @@ def build_orders_analytics() -> pd.DataFrame:
         validate="one_to_one",
     )
 
-    # ============================================================
-    # + REVIEWS
-    # ============================================================
-
     df = df.merge(
         reviews_agg,
         on="order_id",
         how="left",
         validate="one_to_one",
     )
-
-    # ============================================================
-    # VALIDAÇÃO DA GRANULARIDADE
-    # ============================================================
 
     if len(df) != original_order_count:
         raise ValueError(
@@ -145,51 +97,15 @@ def build_orders_analytics() -> pd.DataFrame:
         )
 
     if not df["order_id"].is_unique:
-        raise ValueError(
-            "Erro: order_id deixou de ser único "
-            "após os merges."
-        )
-
-    # ============================================================
-    # FLAGS DE DISPONIBILIDADE
-    # ============================================================
+        raise ValueError("Erro: order_id deixou de ser único após os merges.")
 
     df["has_items"] = df["items_count"].notna()
 
     df["has_payment"] = df["total_paid"].notna()
 
-    df["has_review"] = (
-        df["latest_review_score"].notna()
-    )
+    df["has_review"] = df["latest_review_score"].notna()
 
-    # ============================================================
-    # CAMPOS TEMPORAIS
-    # ============================================================
-
-    df["purchase_date"] = (
-        df["order_purchase_timestamp"]
-        .dt.normalize()
-    )
-
-    df["purchase_year"] = (
-        df["order_purchase_timestamp"]
-        .dt.year
-    )
-
-    df["purchase_month"] = (
-        df["order_purchase_timestamp"]
-        .dt.month
-    )
-
-    df["purchase_year_month"] = (
-        df["order_purchase_timestamp"]
-        .dt.to_period("M")
-        .astype(str)
-    )
-
-    # ============================================================
-    # COMPORTAMENTO DO CLIENTE
-    # ============================================================
+    add_purchase_fields(df)
 
     df = df.sort_values(
         by=[
@@ -199,67 +115,30 @@ def build_orders_analytics() -> pd.DataFrame:
         ]
     )
 
-    # Número do pedido daquele cliente
-    # em ordem cronológica
-    df["customer_order_number"] = (
-        df.groupby("customer_unique_id")
-        .cumcount()
-        + 1
+    df["customer_order_number"] = df.groupby("customer_unique_id").cumcount() + 1
+
+    df["customer_total_orders"] = df.groupby("customer_unique_id")[
+        "order_id"
+    ].transform("count")
+
+    df["is_repeat_customer"] = df["customer_total_orders"] > 1
+
+    df["is_repeat_purchase"] = df["customer_order_number"] > 1
+
+    # Divergências são sinalizadas; os valores originais não são alterados.
+
+    df["payment_items_difference"] = (df["total_paid"] - df["order_items_total"]).round(
+        2
     )
 
-    # Quantidade total de pedidos
-    # associados ao mesmo cliente único
-    df["customer_total_orders"] = (
-        df.groupby("customer_unique_id")[
-            "order_id"
-        ]
-        .transform("count")
-    )
-
-    # Cliente fez mais de um pedido
-    df["is_repeat_customer"] = (
-        df["customer_total_orders"] > 1
-    )
-
-    # Esta linha representa uma compra
-    # posterior à primeira
-    df["is_repeat_purchase"] = (
-        df["customer_order_number"] > 1
-    )
-
-    # ============================================================
-    # CONSISTÊNCIA FINANCEIRA
-    # ============================================================
-
-    # Comparação:
-    #
-    # total_paid
-    #     vs.
-    # products_value + freight_value
-    #
-    # Não usamos isso para alterar os dados.
-    # Apenas identificamos possíveis divergências.
-
-    df["payment_items_difference"] = (
-        df["total_paid"]
-        - df["order_items_total"]
-    ).round(2)
-
-    # Booleano anulável:
-    #
-    # True  = existe divergência > R$ 0,01
-    # False = valores conciliam
-    # <NA>  = comparação não pode ser realizada
+    # Sem pagamento ou itens, a conciliação fica indefinida.
     df["has_financial_mismatch"] = pd.Series(
         pd.NA,
         index=df.index,
         dtype="boolean",
     )
 
-    financial_mask = (
-        df["total_paid"].notna()
-        & df["order_items_total"].notna()
-    )
+    financial_mask = df["total_paid"].notna() & df["order_items_total"].notna()
 
     df.loc[
         financial_mask,
@@ -271,10 +150,6 @@ def build_orders_analytics() -> pd.DataFrame:
         ].abs()
         > 0.01
     )
-
-    # ============================================================
-    # AJUSTE DE TIPOS
-    # ============================================================
 
     integer_columns = [
         "items_count",
@@ -293,11 +168,7 @@ def build_orders_analytics() -> pd.DataFrame:
     ]
 
     for column in integer_columns:
-        if column in df.columns:
-            df[column] = (
-                df[column]
-                .astype("Int64")
-            )
+        df[column] = df[column].astype("Int64")
 
     boolean_columns = [
         "has_items",
@@ -308,22 +179,9 @@ def build_orders_analytics() -> pd.DataFrame:
     ]
 
     for column in boolean_columns:
-        if column in df.columns:
-            df[column] = (
-                df[column]
-                .astype("boolean")
-            )
+        df[column] = df[column].astype("boolean")
 
-    # ============================================================
-    # ORDENAÇÃO FINAL
-    # ============================================================
-
-    df = (
-        df.sort_values(
-            "order_purchase_timestamp"
-        )
-        .reset_index(drop=True)
-    )
+    df = df.sort_values("order_purchase_timestamp").reset_index(drop=True)
 
     return df
 
@@ -331,24 +189,14 @@ def build_orders_analytics() -> pd.DataFrame:
 def save_orders_analytics(
     df: pd.DataFrame,
 ) -> None:
-    """
-    Salva a tabela analítica em CSV e Parquet.
-    """
-
     PROCESSED_PATH.mkdir(
         parents=True,
         exist_ok=True,
     )
 
-    csv_path = (
-        PROCESSED_PATH
-        / "orders_analytics.csv"
-    )
+    csv_path = PROCESSED_PATH / "orders_analytics.csv"
 
-    parquet_path = (
-        PROCESSED_PATH
-        / "orders_analytics.parquet"
-    )
+    parquet_path = PROCESSED_PATH / "orders_analytics.parquet"
 
     df.to_csv(
         csv_path,
@@ -360,13 +208,9 @@ def save_orders_analytics(
         index=False,
     )
 
-    print(
-        f"\nCSV salvo em: {csv_path}"
-    )
+    print(f"\nCSV salvo em: {csv_path}")
 
-    print(
-        f"Parquet salvo em: {parquet_path}"
-    )
+    print(f"Parquet salvo em: {parquet_path}")
 
 
 def main() -> None:
@@ -376,38 +220,17 @@ def main() -> None:
     print("ORDERS ANALYTICS")
     print("=" * 80)
 
-    print(
-        f"Linhas: {len(df):,}"
-    )
+    print(f"Linhas: {len(df):,}")
 
-    print(
-        f"Pedidos únicos: "
-        f"{df['order_id'].nunique():,}"
-    )
+    print(f"Pedidos únicos: {df['order_id'].nunique():,}")
 
-    print(
-        f"Colunas: {df.shape[1]}"
-    )
+    print(f"Colunas: {df.shape[1]}")
 
-    print(
-        f"Clientes únicos: "
-        f"{df['customer_unique_id'].nunique():,}"
-    )
-
-    # ============================================================
-    # STATUS
-    # ============================================================
+    print(f"Clientes únicos: {df['customer_unique_id'].nunique():,}")
 
     print("\nSTATUS DOS PEDIDOS:")
 
-    print(
-        df["order_status"]
-        .value_counts()
-    )
-
-    # ============================================================
-    # DISPONIBILIDADE
-    # ============================================================
+    print(df["order_status"].value_counts())
 
     print("\nDISPONIBILIDADE DOS DADOS:")
 
@@ -426,83 +249,37 @@ def main() -> None:
         int(df["has_review"].sum()),
     )
 
-    # ============================================================
-    # CLIENTES RECORRENTES
-    # ============================================================
-
-    recurring_customers = (
-        df.loc[
-            df["is_repeat_customer"],
-            "customer_unique_id",
-        ]
-        .nunique()
-    )
+    recurring_customers = df.loc[
+        df["is_repeat_customer"],
+        "customer_unique_id",
+    ].nunique()
 
     print("\nCLIENTES RECORRENTES:")
 
-    print(
-        f"{recurring_customers:,}"
-    )
+    print(f"{recurring_customers:,}")
 
-    # ============================================================
-    # CONSISTÊNCIA FINANCEIRA
-    # ============================================================
+    print("\nDIFERENÇA PAGAMENTO VS ITENS:")
 
-    print(
-        "\nDIFERENÇA PAGAMENTO VS ITENS:"
-    )
+    print(df["payment_items_difference"].describe())
 
-    print(
-        df["payment_items_difference"]
-        .describe()
-    )
+    financial_mismatch_count = df["has_financial_mismatch"].fillna(False).sum()
 
-    financial_mismatch_count = (
-        df["has_financial_mismatch"]
-        .fillna(False)
-        .sum()
-    )
+    financial_comparable_count = df["has_financial_mismatch"].notna().sum()
 
-    financial_comparable_count = (
-        df["has_financial_mismatch"]
-        .notna()
-        .sum()
-    )
+    print("\nPEDIDOS COM DIVERGÊNCIA FINANCEIRA:")
 
-    print(
-        "\nPEDIDOS COM DIVERGÊNCIA FINANCEIRA:"
-    )
+    print(f"{financial_mismatch_count:,}")
 
-    print(
-        f"{financial_mismatch_count:,}"
-    )
+    print("\nPEDIDOS COMPARÁVEIS FINANCEIRAMENTE:")
 
-    print(
-        "\nPEDIDOS COMPARÁVEIS FINANCEIRAMENTE:"
-    )
-
-    print(
-        f"{financial_comparable_count:,}"
-    )
+    print(f"{financial_comparable_count:,}")
 
     if financial_comparable_count > 0:
-        mismatch_rate = (
-            financial_mismatch_count
-            / financial_comparable_count
-            * 100
-        )
+        mismatch_rate = financial_mismatch_count / financial_comparable_count * 100
 
-        print(
-            "\nTAXA DE DIVERGÊNCIA:"
-        )
+        print("\nTAXA DE DIVERGÊNCIA:")
 
-        print(
-            f"{mismatch_rate:.2f}%"
-        )
-
-    # ============================================================
-    # EXEMPLO
-    # ============================================================
+        print(f"{mismatch_rate:.2f}%")
 
     print("\nEXEMPLO:")
 
@@ -521,15 +298,7 @@ def main() -> None:
         "is_delayed",
     ]
 
-    print(
-        df[
-            example_columns
-        ].head()
-    )
-
-    # ============================================================
-    # SALVAMENTO
-    # ============================================================
+    print(df[example_columns].head())
 
     save_orders_analytics(df)
 

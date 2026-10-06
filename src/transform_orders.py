@@ -3,7 +3,7 @@ from pathlib import Path
 import pandas as pd
 
 
-RAW_PATH = Path("data/raw")
+RAW_PATH = Path(__file__).resolve().parent.parent / "data" / "raw"
 
 DATE_COLUMNS = [
     "order_purchase_timestamp",
@@ -15,74 +15,48 @@ DATE_COLUMNS = [
 
 
 def load_orders() -> pd.DataFrame:
-    return pd.read_csv(
-        RAW_PATH / "olist_orders_dataset.csv"
-    )
+    return pd.read_csv(RAW_PATH / "olist_orders_dataset.csv")
 
 
 def transform_orders(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
-    # Converte colunas de data
     for column in DATE_COLUMNS:
-        df[column] = pd.to_datetime(
-            df[column],
-            errors="coerce"
-        )
+        df[column] = pd.to_datetime(df[column], errors="coerce")
 
-    # Tempo total entre compra e entrega
     df["delivery_days"] = (
-        df["order_delivered_customer_date"]
-        - df["order_purchase_timestamp"]
+        df["order_delivered_customer_date"] - df["order_purchase_timestamp"]
     ).dt.days
 
-    # Prazo originalmente estimado
     df["estimated_delivery_days"] = (
-        df["order_estimated_delivery_date"]
-        - df["order_purchase_timestamp"]
+        df["order_estimated_delivery_date"] - df["order_purchase_timestamp"]
     ).dt.days
 
-    # Normaliza as datas para ignorar horário
-    delivered_date = (
-        df["order_delivered_customer_date"]
-        .dt.normalize()
-    )
+    # Atraso é medido em dias de calendário, sem considerar o horário.
+    delivered_date = df["order_delivered_customer_date"].dt.normalize()
 
-    estimated_date = (
-        df["order_estimated_delivery_date"]
-        .dt.normalize()
-    )
+    estimated_date = df["order_estimated_delivery_date"].dt.normalize()
 
-    # Diferença entre entrega real e prevista
-    # negativo = entregue antes
-    # zero = entregue no dia
-    # positivo = atraso
-    df["delay_days"] = (
-        delivered_date
-        - estimated_date
-    ).dt.days
+    df["delay_days"] = (delivered_date - estimated_date).dt.days
 
-    # Booleano anulável:
-    # True  = atrasado
-    # False = no prazo ou antecipado
-    # <NA>  = pedido sem data de entrega
-    df["is_delayed"] = pd.Series(
-        pd.NA,
-        index=df.index,
-        dtype="boolean"
-    )
+    # Pedidos sem as duas datas permanecem sem classificação de atraso.
+    df["is_delayed"] = pd.Series(pd.NA, index=df.index, dtype="boolean")
 
-    delivered_mask = (
-        delivered_date.notna()
-        & estimated_date.notna()
-    )
+    delivered_mask = delivered_date.notna() & estimated_date.notna()
 
     df.loc[delivered_mask, "is_delayed"] = (
-        delivered_date[delivered_mask]
-        > estimated_date[delivered_mask]
+        delivered_date[delivered_mask] > estimated_date[delivered_mask]
     )
 
     return df
+
+
+def add_purchase_fields(df: pd.DataFrame) -> None:
+    purchase = df["order_purchase_timestamp"]
+    df["purchase_date"] = purchase.dt.normalize()
+    df["purchase_year"] = purchase.dt.year
+    df["purchase_month"] = purchase.dt.month
+    df["purchase_year_month"] = purchase.dt.to_period("M").astype(str)
 
 
 def main() -> None:
